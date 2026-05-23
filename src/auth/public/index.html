@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Plutus — Connect Your Bank</title>
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+  </head>
+  <body>
+    <h1>Plutus</h1>
+    <button id="connect-btn">Connect Bank Account</button>
+    <p id="status"></p>
+
+    <script>
+      document
+        .getElementById("connect-btn")
+        .addEventListener("click", async () => {
+          const status = document.getElementById("status");
+          status.textContent = "Connecting...";
+          const { link_token } = await fetch("/api/create-link-token", {
+            method: "POST",
+          }).then((r) => r.json());
+
+          const handler = Plaid.create({
+            token: link_token,
+            onSuccess: async (public_token) => {
+              await fetch("/api/exchange-token", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ public_token }),
+              });
+              status.textContent = "✓ Bank linked! Closing...";
+              setTimeout(() => window.close(), 1000);
+            },
+            onExit: () => {
+              status.textContent = "Cancelled.";
+            },
+          });
+
+          handler.open();
+        });
+    </script>
+  </body>
+</html>
