@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import open from "open";
-import { saveCredentials } from "./store";
+import { saveAccount, loadAccounts, removeAccount } from "./store";
 import {
     Configuration,
     PlaidApi,
@@ -36,6 +36,16 @@ export const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+app.get("/api/accounts", (_req, res) => {
+    const accounts = loadAccounts().map(({ item_id, institution_name, label, added_at }) => ({
+        item_id,
+        institution_name,
+        label,
+        added_at,
+    }));
+    res.json({ accounts });
+});
+
 app.post("/api/create-link-token", async (_req, res) => {
     try {
         const { data } = await plaid.linkTokenCreate({
@@ -53,27 +63,38 @@ app.post("/api/create-link-token", async (_req, res) => {
 });
 
 app.post("/api/exchange-token", async (req, res) => {
-    const { public_token } = req.body as { public_token: string };
+    const { public_token, institution_name = "Bank Account", label } = req.body as {
+        public_token: string;
+        institution_name?: string;
+        label?: string;
+    };
     if (!public_token) {
         res.status(400).json({ error: "public_token is required" });
         return;
     }
     try {
         const { data } = await plaid.itemPublicTokenExchange({ public_token });
-        saveCredentials({ access_token: data.access_token, item_id: data.item_id });
+        saveAccount({
+            access_token: data.access_token,
+            item_id: data.item_id,
+            institution_name,
+            label: label ?? institution_name,
+            added_at: new Date().toISOString(),
+        });
+        console.log(`✓ Linked: ${label ?? institution_name}`);
         res.json({ ok: true });
-        setTimeout(() => {
-            console.log("✓ Bank linked. Closing terminal.");
-            process.exit(0);
-        }, 500);
     } catch (err: any) {
         console.error(err?.response?.data ?? err);
         res.status(500).json({ error: "Failed to exchange token" });
     }
 });
 
-app.listen(Number(PORT), () => {
-    console.log("Opening Plutus auth...");
-    open("http://localhost:3000");
+app.delete("/api/accounts/:item_id", (req, res) => {
+    removeAccount(req.params.item_id);
+    res.json({ ok: true });
+});
 
+app.listen(Number(PORT), () => {
+    console.log(`Plutus auth open at http://localhost:${PORT} — press Ctrl+C when done.`);
+    open(`http://localhost:${PORT}`);
 });
